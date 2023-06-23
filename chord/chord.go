@@ -3,11 +3,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
-
+	"io"
 	"net/http"
 	"net/url"
-
+	"os"
 	"regexp"
 	"strings"
 
@@ -26,15 +25,17 @@ type SongWithChords struct {
 }
 
 func main() {
+	filePath := "../some_songs.json"
 
-	fileContent, err := ioutil.ReadFile("../some_songs.json")
+	file, err := os.Open(filePath)
 	if err != nil {
-		fmt.Println("Ошибка при чтении файла:", err)
+		fmt.Println("Ошибка при открытии файла:", err)
 		return
 	}
+	defer file.Close()
 
 	var songs []Song
-	err = json.Unmarshal(fileContent, &songs)
+	err = json.NewDecoder(file).Decode(&songs)
 	if err != nil {
 		fmt.Println("Ошибка при разборе JSON:", err)
 		return
@@ -63,7 +64,7 @@ func main() {
 		}
 		defer resp.Body.Close()
 
-		body, err := ioutil.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			fmt.Println("Ошибка при чтении ответа:", err)
 			return
@@ -97,7 +98,7 @@ func main() {
 					return
 				}
 
-				songBody, err := ioutil.ReadAll(songResp.Body)
+				songBody, err := io.ReadAll(songResp.Body)
 				if err != nil {
 					fmt.Println("Ошибка при чтении ответа:", err)
 					return
@@ -137,19 +138,23 @@ func main() {
 		}
 	}
 
-	songsJSON, err := json.MarshalIndent(songsWithChords, "", "    ")
+	outputFilePath := "some_songs.json"
+	outputFile, err := os.Create(outputFilePath)
 	if err != nil {
-		fmt.Println("Ошибка при преобразовании в JSON:", err)
+		fmt.Println("Ошибка при создании файла:", err)
+		return
+	}
+	defer outputFile.Close()
+
+	encoder := json.NewEncoder(outputFile)
+	encoder.SetIndent("", "    ")
+	err = encoder.Encode(songsWithChords)
+	if err != nil {
+		fmt.Println("Ошибка при записи в файл:", err)
 		return
 	}
 
-	err = ioutil.WriteFile("some_songs.json", songsJSON, 0644)
-	if err != nil {
-		fmt.Println("Ошибка при сохранении в файл:", err)
-		return
-	}
-
-	fmt.Println("Аккорды сохранены в файл some_songs.json")
+	fmt.Println("Аккорды сохранены в файл", outputFilePath)
 }
 
 func deleteWords(str string) string {
@@ -177,12 +182,14 @@ func deleteBr(str string) []string {
 func extractChords(lines []string) map[int][]string {
 	chords := make(map[int][]string)
 	index := 0
+
 	for _, line := range lines {
-		isChords := regexp.MustCompile(`^[A-Za-z\s]+$`).MatchString(line)
-		if isChords {
-			chords[index] = strings.Fields(line)
+		line = strings.TrimSpace(line)
+		if regexp.MustCompile(`^[A-Za-z0-9\s]+$`).MatchString(line) {
+			chords[index+1] = strings.Fields(line)
 			index++
 		}
 	}
+
 	return chords
 }
